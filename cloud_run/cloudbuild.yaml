@@ -4,10 +4,14 @@ substitutions:
   _SERVICE: market-insight-api
   _REGION: asia-northeast3
   _REPO: gcr.io/${PROJECT_ID}
+  # CSV of allowed origins — pass via trigger substitution:
+  #   --substitutions=_CORS_ORIGINS=https://<your-hosting>.web.app
+  # Default "*" keeps local/dev unblocked; production triggers MUST override.
+  _CORS_ORIGINS: '*'
 
 steps:
   # docker build/push run with cwd = cloud_run/ so Dockerfile + app/ are resolvable
-  # when this config is submitted from the repo root (`gcloud builds submit --config cloud_run/cloudbuild.yaml`).
+  # when this config is submitted from the repo root.
   - name: gcr.io/cloud-builders/docker
     dir: cloud_run
     args: ['build', '-t', '${_REPO}/${_SERVICE}:${SHORT_SHA}', '-t', '${_REPO}/${_SERVICE}:latest', '.']
@@ -29,7 +33,9 @@ steps:
       - --min-instances=0
       - --max-instances=10
       - --timeout=300
-      - --set-env-vars=GCP_PROJECT=${PROJECT_ID},FIREBASE_PROJECT=${PROJECT_ID}
+      # Single source of truth — PROJECT_ID covers GCP/Firestore/Auth audience.
+      # CORS_ORIGINS must be explicit so startup invariant check passes.
+      - --set-env-vars=PROJECT_ID=${PROJECT_ID},CORS_ORIGINS=${_CORS_ORIGINS}
 
 images:
   - '${_REPO}/${_SERVICE}:${SHORT_SHA}'

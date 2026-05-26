@@ -1,6 +1,7 @@
 """FastAPI entry point. Wires routers, CORS, auth middleware, and a health probe."""
 from __future__ import annotations
 import logging
+import os
 import time
 from contextlib import asynccontextmanager
 
@@ -13,18 +14,43 @@ from app.routers import (
     search, analytics, pricing, market_size, history,
     favorites, brand_compare, export_csv, timeseries,
 )
-from app.services.firestore_client import init_firestore
+from app.services.firestore_client import init_firestore, db
 from app.services.bq_client import init_bq
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s - %(message)s")
 log = logging.getLogger("market-insight")
 
 
+# ── Startup-time invariants (memory rule #26) ────────────────────────────────
+# Production deployments must declare PROJECT_ID and CORS_ORIGINS explicitly.
+# Local / test runs (TEST_MODE=true) skip the check.
+def _verify_required_env():
+    if os.getenv("TEST_MODE", "").lower() == "true":
+        return
+    required = ["PROJECT_ID", "CORS_ORIGINS"]
+    missing = [k for k in required if not os.getenv(k)]
+    if missing:
+        raise RuntimeError(f"Missing required env vars: {missing}")
+
+
+def _verify_firestore():
+    """Cheap Firestore reachability probe — fails fast in production."""
+    if os.getenv("TEST_MODE", "").lower() == "true":
+        return
+    try:
+        list(db().collection("_healthcheck").limit(1).stream())
+        log.info("Firestore connectivity OK (project=%s)", get_settings().project_id)
+    except Exception as e:
+        raise RuntimeError(f"Firestore connectivity failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    _verify_required_env()
     init_firestore()
     init_bq()
-    log.info("market-insight Cloud Run app started")
+    _verify_firestore()
+    log.info("market-insight Cloud Run app started (project=%s)", get_settings().project_id)
     yield
     log.info("market-insight Cloud Run app shutting down")
 
@@ -62,7 +88,20 @@ async def log_requests(request: Request, call_next):
 
 @app.get("/health")
 async def health():
-    return {"ok": True, "service": "market-insight-api", "runtime": settings.runtime}
+    s = get_settings()
+    firestore_ok = False
+    try:
+        list(db().collection("_healthcheck").limit(1).stream())
+        firestore_ok = True
+    except Exception as e:
+        log.warning("health: firestore probe failed: %s", e)
+    return {
+        "ok": True,
+        "service": "market-insight-api",
+        "runtime": s.runtime,
+        "project_id": s.project_id,
+        "firestore": "ok" if firestore_ok else "unreachable",
+    }
 
 
 @app.exception_handler(Exception)
