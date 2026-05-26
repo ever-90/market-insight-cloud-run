@@ -1,45 +1,71 @@
-# GCP Cloud Build → Cloud Run deploy pipeline
-# Trigger: GitHub push to main (configured in Cloud Build trigger UI)
+# GCP Cloud Build -> Cloud Run deploy pipeline
+# Trigger: GitHub push to main OR manual `gcloud builds submit`.
+#
+# Why this layout:
+# - Avoid ${SHORT_SHA} — empty on manual submits, only set for trigger-driven builds.
+# - Avoid nested user substitutions that reference ${PROJECT_ID} — inline instead.
+# - _TAG user substitution gives a stable tag (default "latest"); override via
+#     gcloud builds submit ... --substitutions=_TAG=v1
+# - BUILD_ID is always defined (manual + trigger) and is used as the immutable
+#   image tag so each build has a unique reference, with "latest" floating tag.
+
 substitutions:
   _SERVICE: market-insight-api
   _REGION: asia-northeast3
-  _REPO: gcr.io/${PROJECT_ID}
-  # CSV of allowed origins — pass via trigger substitution:
-  #   --substitutions=_CORS_ORIGINS=https://<your-hosting>.web.app
-  # Default "*" keeps local/dev unblocked; production triggers MUST override.
+  _TAG: latest                        # human-friendly mutable tag
+  # CSV of allowed origins; production triggers MUST override this:
+  #   --substitutions=_CORS_ORIGINS=https://<hosting>.web.app
   _CORS_ORIGINS: '*'
 
 steps:
-  # docker build/push run with cwd = cloud_run/ so Dockerfile + app/ are resolvable
-  # when this config is submitted from the repo root.
+  # 1) Build (cwd = cloud_run/ so Dockerfile + app/ resolve).
   - name: gcr.io/cloud-builders/docker
+    id: build
     dir: cloud_run
-    args: ['build', '-t', '${_REPO}/${_SERVICE}:${SHORT_SHA}', '-t', '${_REPO}/${_SERVICE}:latest', '.']
+    args:
+      - build
+      - -t
+      - gcr.io/$PROJECT_ID/${_SERVICE}:$BUILD_ID
+      - -t
+      - gcr.io/$PROJECT_ID/${_SERVICE}:${_TAG}
+      - .
+
+  # 2) Push both tags.
   - name: gcr.io/cloud-builders/docker
-    dir: cloud_run
-    args: ['push', '--all-tags', '${_REPO}/${_SERVICE}']
+    id: push
+    waitFor: ['build']
+    args:
+      - push
+      - --all-tags
+      - gcr.io/$PROJECT_ID/${_SERVICE}
+
+  # 3) Deploy to Cloud Run by immutable tag ($BUILD_ID) for traceability.
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    id: deploy
+    waitFor: ['push']
     entrypoint: gcloud
     args:
       - run
       - deploy
       - ${_SERVICE}
-      - --image=${_REPO}/${_SERVICE}:${SHORT_SHA}
+      - --image=gcr.io/$PROJECT_ID/${_SERVICE}:$BUILD_ID
       - --region=${_REGION}
       - --platform=managed
-      - --allow-unauthenticated  # public API + JWT-gated routes
+      - --allow-unauthenticated
       - --memory=512Mi
       - --cpu=1
       - --min-instances=0
       - --max-instances=10
       - --timeout=300
-      # Single source of truth — PROJECT_ID covers GCP/Firestore/Auth audience.
-      # CORS_ORIGINS must be explicit so startup invariant check passes.
-      - --set-env-vars=PROJECT_ID=${PROJECT_ID},CORS_ORIGINS=${_CORS_ORIGINS}
+      # Single PROJECT_ID env var (covers GCP / Firestore / Auth audience).
+      # CORS_ORIGINS must be explicit so the startup invariant check passes.
+      - --set-env-vars=PROJECT_ID=$PROJECT_ID,CORS_ORIGINS=${_CORS_ORIGINS}
 
+# Declare images so Cloud Build records them as build artifacts.
 images:
-  - '${_REPO}/${_SERVICE}:${SHORT_SHA}'
-  - '${_REPO}/${_SERVICE}:latest'
+  - gcr.io/$PROJECT_ID/${_SERVICE}:$BUILD_ID
+  - gcr.io/$PROJECT_ID/${_SERVICE}:${_TAG}
 
 options:
   logging: CLOUD_LOGGING_ONLY
+  machineType: E2_HIGHCPU_8
