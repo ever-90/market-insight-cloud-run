@@ -1,0 +1,35 @@
+# GCP Cloud Build → Cloud Run deploy pipeline
+# Trigger: GitHub push to main (configured in Cloud Build trigger UI)
+substitutions:
+  _SERVICE: market-insight-api
+  _REGION: asia-northeast3
+  _REPO: gcr.io/${PROJECT_ID}
+
+steps:
+  - name: gcr.io/cloud-builders/docker
+    args: ['build', '-t', '${_REPO}/${_SERVICE}:${SHORT_SHA}', '-t', '${_REPO}/${_SERVICE}:latest', '.']
+  - name: gcr.io/cloud-builders/docker
+    args: ['push', '--all-tags', '${_REPO}/${_SERVICE}']
+  - name: gcr.io/google.com/cloudsdktool/cloud-sdk
+    entrypoint: gcloud
+    args:
+      - run
+      - deploy
+      - ${_SERVICE}
+      - --image=${_REPO}/${_SERVICE}:${SHORT_SHA}
+      - --region=${_REGION}
+      - --platform=managed
+      - --allow-unauthenticated  # public API + JWT-gated routes
+      - --memory=512Mi
+      - --cpu=1
+      - --min-instances=0
+      - --max-instances=10
+      - --timeout=300
+      - --set-env-vars=GCP_PROJECT=${PROJECT_ID},FIREBASE_PROJECT=${PROJECT_ID}
+
+images:
+  - '${_REPO}/${_SERVICE}:${SHORT_SHA}'
+  - '${_REPO}/${_SERVICE}:latest'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

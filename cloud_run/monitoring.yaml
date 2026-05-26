@@ -1,0 +1,63 @@
+# Cloud Monitoring config — applied via `gcloud monitoring` or Terraform.
+# Phase 3.6 — observability + SLA.
+
+alerting_policies:
+
+  - display_name: "Cloud Run 5xx rate > 1%"
+    conditions:
+      - display_name: "5xx rate over 5 min"
+        condition_threshold:
+          filter: 'resource.type="cloud_run_revision" AND metric.type="run.googleapis.com/request_count" AND metric.label.response_code_class="5xx"'
+          comparison: COMPARISON_GT
+          threshold_value: 0.01
+          duration: 300s
+          aggregations:
+            - alignment_period: 60s
+              per_series_aligner: ALIGN_RATE
+    notification_channels: ["<EMAIL_CHANNEL_ID>"]
+
+  - display_name: "P95 latency > 2s"
+    conditions:
+      - display_name: "P95 latency"
+        condition_threshold:
+          filter: 'resource.type="cloud_run_revision" AND metric.type="run.googleapis.com/request_latencies"'
+          comparison: COMPARISON_GT
+          threshold_value: 2000
+          duration: 300s
+          aggregations:
+            - alignment_period: 60s
+              per_series_aligner: ALIGN_PERCENTILE_95
+    notification_channels: ["<EMAIL_CHANNEL_ID>"]
+
+  - display_name: "Firestore quota approaching"
+    conditions:
+      - display_name: "Reads/min > 80% of quota"
+        condition_threshold:
+          filter: 'resource.type="consumed_api" AND service="firestore.googleapis.com"'
+          comparison: COMPARISON_GT
+          threshold_value: 40000
+          duration: 600s
+    notification_channels: ["<EMAIL_CHANNEL_ID>"]
+
+
+# Service Level Objectives
+slo:
+  - service: market-insight-api
+    sli: availability
+    goal: 0.999    # 99.9% — ≤ 43 min downtime / month
+    period: rolling_30_days
+  - service: market-insight-api
+    sli: latency
+    p95_threshold_ms: 1500
+    goal: 0.95     # 95% of requests under 1.5s
+    period: rolling_30_days
+
+
+# Firestore export (backup) — daily at 02:00 UTC
+firestore_backup:
+  schedule: "0 2 * * *"
+  bucket: "gs://${PROJECT_ID}-firestore-backups"
+  collection_ids:
+    - users
+    - global_category_pricing
+  retention_days: 30
