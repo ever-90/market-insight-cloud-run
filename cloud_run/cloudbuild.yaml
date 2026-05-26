@@ -6,9 +6,13 @@ substitutions:
   _REPO: gcr.io/${PROJECT_ID}
 
 steps:
+  # docker build/push run with cwd = cloud_run/ so Dockerfile + app/ are resolvable
+  # when this config is submitted from the repo root (`gcloud builds submit --config cloud_run/cloudbuild.yaml`).
   - name: gcr.io/cloud-builders/docker
+    dir: cloud_run
     args: ['build', '-t', '${_REPO}/${_SERVICE}:${SHORT_SHA}', '-t', '${_REPO}/${_SERVICE}:latest', '.']
   - name: gcr.io/cloud-builders/docker
+    dir: cloud_run
     args: ['push', '--all-tags', '${_REPO}/${_SERVICE}']
   - name: gcr.io/google.com/cloudsdktool/cloud-sdk
     entrypoint: gcloud
