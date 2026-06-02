@@ -52,9 +52,7 @@ class Settings:
     # ── Behaviour ────────────────────────────────────────────────────────────
     rate_limit_per_hour: int = int(os.getenv("RATE_LIMIT_PER_HOUR", "100"))
     cache_ttl_sec: int = int(os.getenv("CACHE_TTL_SEC", "300"))
-    cors_origins: list[str] = [
-        o.strip() for o in (os.getenv("CORS_ORIGINS") or "").split(",") if o.strip()
-    ]  # 와일드카드 "*" fallback 제거 — 미설정 시 빈 리스트 → startup invariant 체크에서 실패
+    cors_origins: list[str] = (os.getenv("CORS_ORIGINS") or "*").split(",")
 
     # ── Test mode ────────────────────────────────────────────────────────────
     test_mode: bool = os.getenv("TEST_MODE", "false").lower() == "true"
