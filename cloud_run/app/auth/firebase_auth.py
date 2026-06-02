@@ -39,8 +39,10 @@ def _init_firebase():
         try:
             firebase_admin.get_app()
         except ValueError:
-            # In Cloud Run, ADC credentials work without a key file
-            firebase_admin.initialize_app(options={"projectId": s.firebase_project})
+            # In Cloud Run, ADC credentials work without a key file.
+            # projectId = Firebase Auth 프로젝트(auth_project) — 토큰 aud 검증 대상.
+            #   Firestore용 firebase_project 와 분리 (GCP=foodncare / Auth=foodncare-a2c54).
+            firebase_admin.initialize_app(options={"projectId": s.auth_project})
         _firebase_inited = True
     except Exception as e:
         log.warning("firebase admin init failed: %s", e)

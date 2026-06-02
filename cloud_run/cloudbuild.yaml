@@ -13,9 +13,14 @@ substitutions:
   _SERVICE: market-insight-api
   _REGION: asia-northeast3
   _TAG: latest                        # human-friendly mutable tag
-  # CSV of allowed origins; production triggers MUST override this:
-  #   --substitutions=_CORS_ORIGINS=https://<hosting>.web.app
-  _CORS_ORIGINS: '*'
+  # CSV of allowed origins — 명시값(와일드카드 아님)으로 B2 보안 의도 유지.
+  #   트리거 자동 빌드가 substitution 미명시로 돌아도 CORS 통과 + startup invariant 성공.
+  #   다른 프론트 도메인 추가 시 override:
+  #   gcloud builds submit ... --substitutions=_CORS_ORIGINS=https://other.web.app
+  _CORS_ORIGINS: 'https://foodncare-a2c54.web.app,https://foodncare-a2c54.firebaseapp.com'
+  # Firebase Auth 프로젝트 — GCP 프로젝트($PROJECT_ID)와 분리.
+  #   토큰 aud 검증용. GCP=foodncare 이지만 Firebase Auth=foodncare-a2c54 이므로 명시.
+  _FIREBASE_PROJECT: foodncare-a2c54
 
 steps:
   # 1) Build (cwd = cloud_run/ so Dockerfile + app/ resolve).
@@ -57,9 +62,9 @@ steps:
       - --min-instances=0
       - --max-instances=10
       - --timeout=300
-      # Single PROJECT_ID env var (covers GCP / Firestore / Auth audience).
+      # PROJECT_ID = GCP/Firestore. FIREBASE_PROJECT_ID = Firebase Auth(aud) — 분리 필수.
       # CORS_ORIGINS must be explicit so the startup invariant check passes.
-      - --set-env-vars=PROJECT_ID=$PROJECT_ID,CORS_ORIGINS=${_CORS_ORIGINS}
+      - --set-env-vars=PROJECT_ID=$PROJECT_ID,FIREBASE_PROJECT_ID=${_FIREBASE_PROJECT},CORS_ORIGINS=${_CORS_ORIGINS}
 
 # Declare images so Cloud Build records them as build artifacts.
 images:

@@ -29,7 +29,15 @@ class Settings:
 
     # Aliases kept for routes that still reference the old names
     gcp_project: str = project_id
+    # firebase_project = Firestore 데이터 프로젝트 (firestore_client.py 가 사용).
+    #   GCP 프로젝트와 동일 유지 — 건드리면 Firestore 연결 대상이 바뀌어 데이터 유실 위험.
     firebase_project: str = project_id
+
+    # auth_project = Firebase Auth 프로젝트 (토큰 aud 검증 전용, firebase_auth.py 가 사용).
+    #   GCP/Firestore(foodncare)와 다를 수 있음. 예: Firebase Auth=foodncare-a2c54.
+    #   verify_id_token 의 aud 검증은 이 projectId 와 토큰 aud 일치 여부로 판정 →
+    #   반드시 Firebase Auth 프로젝트로 정렬. 독립 env(FIREBASE_PROJECT_ID) 우선, 미설정 시 project_id 폴백.
+    auth_project: str = os.getenv("FIREBASE_PROJECT_ID") or project_id
 
     bq_dataset: str = os.getenv("BQ_DATASET", "food_data")
     bq_aggregated_table: str = os.getenv("BQ_AGG_TABLE", "aggregated_results")
@@ -44,7 +52,9 @@ class Settings:
     # ── Behaviour ────────────────────────────────────────────────────────────
     rate_limit_per_hour: int = int(os.getenv("RATE_LIMIT_PER_HOUR", "100"))
     cache_ttl_sec: int = int(os.getenv("CACHE_TTL_SEC", "300"))
-    cors_origins: list[str] = (os.getenv("CORS_ORIGINS") or "*").split(",")
+    cors_origins: list[str] = [
+        o.strip() for o in (os.getenv("CORS_ORIGINS") or "").split(",") if o.strip()
+    ]  # 와일드카드 "*" fallback 제거 — 미설정 시 빈 리스트 → startup invariant 체크에서 실패
 
     # ── Test mode ────────────────────────────────────────────────────────────
     test_mode: bool = os.getenv("TEST_MODE", "false").lower() == "true"
