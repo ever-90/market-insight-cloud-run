@@ -13,9 +13,10 @@ substitutions:
   _SERVICE: market-insight-api
   _REGION: asia-northeast3
   _TAG: latest                        # human-friendly mutable tag
-  # CSV of allowed origins; production triggers MUST override this:
-  #   --substitutions=_CORS_ORIGINS=https://<hosting>.web.app
-  _CORS_ORIGINS: '*'
+  # CSV of allowed origins (콤마 구분). 명시 도메인 고정 — '*' 금지.
+  #   이유: allow_credentials=True + ACAO '*' = 브라우저 credentials 요청 차단 (CORS 버그).
+  #   ⚠️ 콤마 값은 set-env-vars 기본 콤마 구분과 충돌 → 아래 deploy step 에서 ^##^ 커스텀 구분자 사용.
+  _CORS_ORIGINS: 'https://foodncare-a2c54.web.app,https://foodncare-a2c54.firebaseapp.com'
   # Firebase Auth 프로젝트 — GCP 프로젝트($PROJECT_ID)와 분리.
   #   토큰 aud 검증용. GCP=foodncare 이지만 Firebase Auth=foodncare-a2c54 이므로 명시.
   _FIREBASE_PROJECT: foodncare-a2c54
@@ -61,7 +62,8 @@ steps:
       - --max-instances=10
       - --timeout=300
       # PROJECT_ID = GCP/Firestore. FIREBASE_PROJECT_ID = Firebase Auth(aud) 분리. CORS_ORIGINS = 허용 origin.
-      - --set-env-vars=PROJECT_ID=$PROJECT_ID,FIREBASE_PROJECT_ID=${_FIREBASE_PROJECT},CORS_ORIGINS=${_CORS_ORIGINS}
+      # ^##^ = gcloud 커스텀 구분자 — CORS_ORIGINS 값의 콤마(다중 도메인)가 env 구분자로 오인되지 않도록 함.
+      - --set-env-vars=^##^PROJECT_ID=$PROJECT_ID##FIREBASE_PROJECT_ID=${_FIREBASE_PROJECT}##CORS_ORIGINS=${_CORS_ORIGINS}
 
 # Declare images so Cloud Build records them as build artifacts.
 images:
